@@ -15,7 +15,8 @@
     <main>
       <section id="activities-container">
         <h3>Available Activities</h3>
-        <div id="activities-list">
+        <!-- added aria-live so updates to the activities list are announced -->
+        <div id="activities-list" aria-live="polite">
           <!-- Activities will be loaded here -->
           <p>Loading activities...</p>
         </div>
