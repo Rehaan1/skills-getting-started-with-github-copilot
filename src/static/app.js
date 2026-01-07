@@ -14,13 +14,76 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadActivities() {
     activitiesList.innerHTML = '<p>Loading activities...</p>';
     try {
-      const res = await fetch('/activities');
+      const res = await fetch('/activities', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to load activities');
       const data = await res.json();
       renderActivities(data);
       populateSelect(Object.keys(data));
     } catch (err) {
       activitiesList.innerHTML = '<p class="error">Could not load activities.</p>';
+    }
+  }
+
+  // Create a participant list item with delete handler (reusable)
+  function createParticipantItem(activityName, p) {
+    const li = document.createElement('li');
+    li.className = 'participant-item';
+
+    const span = document.createElement('span');
+    span.className = 'participant-email';
+    span.textContent = p;
+
+    const btn = document.createElement('button');
+    btn.className = 'delete-participant';
+    btn.title = 'Unregister participant';
+    btn.textContent = '✖';
+
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Unregister ${p} from ${activityName}?`)) return;
+      try {
+        const res = await fetch(`/activities/${encodeURIComponent(activityName)}/participants?email=${encodeURIComponent(p)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) {
+          showMessage(data.detail || data.message || 'Failed to unregister.', 'error');
+          return;
+        }
+        showMessage(data.message || 'Participant unregistered.', 'success');
+        await loadActivities();
+      } catch (err) {
+        showMessage('An error occurred while unregistering.', 'error');
+      }
+    });
+
+    li.appendChild(span);
+    li.appendChild(btn);
+    return li;
+  }
+
+  // Optimistically add the participant to the DOM so the user sees it immediately
+  function addParticipantToDOM(activityName, email) {
+    const cards = activitiesList.querySelectorAll('.activity-card');
+    for (const card of cards) {
+      const title = card.querySelector('h4');
+      if (title && title.textContent === activityName) {
+        const ul = card.querySelector('.participants-list');
+        const noPart = ul.querySelector('.no-participants');
+        if (noPart) noPart.remove();
+        ul.appendChild(createParticipantItem(activityName, email));
+
+        const header = card.querySelector('.participants-header');
+        if (header) {
+          const m = header.textContent.match(/Participants \((\d+)\)/);
+          if (m) header.textContent = `Participants (${Number(m[1]) + 1})`;
+        }
+
+        const capP = Array.from(card.querySelectorAll('p')).find(p => p.textContent.startsWith('Capacity:'));
+        if (capP) {
+          const match = capP.textContent.match(/Capacity: (\d+) \/ (\d+)/);
+          if (match) capP.textContent = `Capacity: ${Number(match[1]) + 1} / ${match[2]}`;
+        }
+        break;
+      }
     }
   }
 
@@ -57,10 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ul.appendChild(li);
       } else {
         for (const p of info.participants) {
-          const li = document.createElement('li');
-          li.className = 'participant-item';
-          li.textContent = p;
-          ul.appendChild(li);
+          ul.appendChild(createParticipantItem(name, p));
         }
       }
 
@@ -98,6 +158,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       showMessage(data.message || 'Signed up successfully!', 'success');
+      // Optimistically update the UI so the new participant appears immediately
+      addParticipantToDOM(activity, email);
       // Refresh activities to ensure participants lists / counts are up to date
       await loadActivities();
       // clear email
